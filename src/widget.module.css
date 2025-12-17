@@ -1,0 +1,192 @@
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 4px;
+  background-color: #e3e1e6;
+  transition: background-color 0.5s;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #c8c6ca;
+}
+
+.root {
+  display: block;
+  position: fixed;
+  z-index: 9999;
+  top: calc(100dvh - 25px);
+  left: 25px;
+  width: 128px;
+  height: 258px;
+  max-height: 48px;
+  overflow: hidden;
+  background-color: #0003;
+  backdrop-filter: blur(10px);
+  border-radius: 5px;
+  box-shadow: rgba(100, 100, 111, 0.2) 0px 7px 29px 0px;
+  transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  box-sizing: border-box;
+
+  font-optical-sizing: auto;
+  font-size: 12px;
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  color: #fff;
+}
+
+.root.open {
+  max-height: 258px;
+}
+
+.header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  background-color: #00000033;
+  border-radius: 8px;
+}
+
+.title {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  padding: 0 8px;
+  font-weight: 500;
+}
+
+.toggle {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.toggle > svg {
+  width: 14px;
+  height: 14px;
+  color: #fff;
+  transition: transform 0.3s;
+}
+
+.root.open .toggle > svg {
+  transform: rotate(180deg);
+}
+
+.content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.field {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.input {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  background-color: rgba(255, 255, 255, 0.2);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  color: #b9b3f3;
+}
+
+.checkbox > input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: rgba(255, 255, 255, 0.2);
+  margin: 0;
+  font: inherit;
+  color: currentColor;
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  transform: translateY(-0.075em);
+  display: grid;
+  place-content: center;
+}
+
+.checkbox > input[type="checkbox"]::before {
+  content: "";
+  width: 0.65em;
+  height: 0.65em;
+  transform: scale(0);
+  box-shadow: inset 1em 1em #fff;
+  transform-origin: bottom left;
+  clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+}
+
+.checkbox > input[type="checkbox"]:checked::before {
+  transform: scale(1);
+}
+
+.button {
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  background-color: rgba(255, 135, 0, 0.6);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  font-weight: 500;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: background-color 0.3s;
+}
+
+.button:hover {
+  background-color: rgba(255, 135, 0, 0.8);
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
