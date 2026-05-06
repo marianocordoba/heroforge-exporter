@@ -19,13 +19,13 @@ The models exported by this tool aren't as detailed as the official HeroForge do
 ```
 
 4. Press Enter to execute the code.
-5. A widget will appear in the bottom-left corner of the screen. Use it to export your model.
 ### Tampermonkey script
 
   1. Install Tampermonkey
-  2. Go to the latest HeroSaver.user.js file
+  2. Go to the latest [HeroSaver.user.js](https://github.com/FilpperStone/heroforge-exporter/releases/download/Latest/HeroSaver.user.js) file
   Press the Install button
 
+A widget will appear in the bottom-left corner of the screen. Use it to export your model.
 ![HeroForge Exporter Widget](./ss.png)
 
 ## Disclaimer
