@@ -5,7 +5,7 @@ A simple tool to export models as STL files from [HeroForge](https://www.herofor
 The models exported by this tool aren't as detailed as the official HeroForge downloads, but they are good enough for basic 3D printing.
 
 ## How to use
-
+### Console
 1. Open [HeroForge](https://www.heroforge.com/) in your web browser.
 2. Open the browser's developer console (usually F12 or right-click and select "Inspect").
 3. Copy the following code and paste it into the console:
@@ -20,6 +20,11 @@ The models exported by this tool aren't as detailed as the official HeroForge do
 
 4. Press Enter to execute the code.
 5. A widget will appear in the bottom-left corner of the screen. Use it to export your model.
+### Tampermonkey script
+
+  1. Install Tampermonkey
+  2. Go to the latest HeroSaver.user.js file
+  Press the Install button
 
 ![HeroForge Exporter Widget](./ss.png)
 
