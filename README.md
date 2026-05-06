@@ -26,6 +26,7 @@ The models exported by this tool aren't as detailed as the official HeroForge do
   Press the Install button
 
 A widget will appear in the bottom-left corner of the screen. Use it to export your model.
+
 ![HeroForge Exporter Widget](./ss.png)
 
 ## Disclaimer
