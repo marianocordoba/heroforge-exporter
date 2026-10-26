@@ -23,6 +23,13 @@ The models exported by this tool aren't as detailed as the official HeroForge do
 
 ![HeroForge Exporter Widget](./ss.png)
 
+## Safari extension (macOS)
+
+A Safari Web Extension version lives in [`safari/`](./safari). It wraps `dist/hfe.js` so the widget loads automatically on heroforge.com, with no console pasting.
+
+- **Download:** grab the notarised app from the [Releases](https://github.com/Sausagerolls/heroforge-exporter/releases) page, open it once, then enable it in Safari ▸ Settings ▸ Extensions.
+- **Build from source:** open `safari/HeroForge Exporter.xcodeproj` in Xcode. See [`safari/BUILD.md`](./safari/BUILD.md).
+
 ## Disclaimer
 
 - This tool is not affiliated with or endorsed by HeroForge. Please respect HeroForge's terms of service and intellectual property rights.

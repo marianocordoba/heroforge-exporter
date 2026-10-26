@@ -21,3 +21,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Xcode
+xcuserdata/
+DerivedData/
+build/
