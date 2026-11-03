@@ -1,8 +1,8 @@
 # HeroForge Exporter
 
-A simple tool to export models as STL files from [HeroForge](https://www.heroforge.com/).
+A simple tool to export models from [HeroForge](https://www.heroforge.com/) as STL files for 3D printing or GLB files for use in 3D applications.
 
-The models exported by this tool aren't as detailed as the official HeroForge downloads, but they are good enough for basic 3D printing.
+STL is intended for 3D printing. GLB carries the current posed geometry, UV coordinates, available material colors, and readable image textures in a single file. Open GLB directly in Blender; Unity projects may need a glTF importer package. Export quality and texture availability depend on the data exposed by the current HeroForge page, so GLB may not exactly match the website preview.
 
 ## How to use
 
@@ -19,7 +19,7 @@ The models exported by this tool aren't as detailed as the official HeroForge do
 ```
 
 4. Press Enter to execute the code.
-5. A widget will appear in the bottom-left corner of the screen. Use it to export your model.
+5. A widget will appear in the bottom-left corner of the screen. Choose STL for printing or GLB for Blender/Unity, then export.
 
 ![HeroForge Exporter Widget](./ss.png)
 

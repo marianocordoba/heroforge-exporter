@@ -23,7 +23,7 @@
   top: calc(100dvh - 25px);
   left: 25px;
   width: 128px;
-  height: 258px;
+  height: 352px;
   max-height: 48px;
   overflow: hidden;
   background-color: #0003;
@@ -41,7 +41,7 @@
 }
 
 .root.open {
-  max-height: 258px;
+  max-height: 352px;
 }
 
 .header {
@@ -101,6 +101,12 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.note {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 10px;
+  line-height: 1.35;
 }
 
 .row {

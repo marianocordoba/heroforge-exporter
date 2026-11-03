@@ -71,6 +71,14 @@ interface BufferGeometry {
   morphAttributes?: {
     position?: BufferAttribute[]
   }
+  groups?: Array<{ start: number; count: number; materialIndex?: number }>
+}
+
+interface MaterialLike {
+  name?: string
+  color?: unknown
+  map?: unknown
+  [key: string]: unknown
 }
 
 interface Bone {
@@ -91,6 +99,7 @@ interface Mesh {
   visible: boolean
   name: string
   geometry: BufferGeometry
+  material?: MaterialLike | MaterialLike[]
   skeleton?: Skeleton
   matrixWorld: Matrix4
   bindMatrix?: Matrix4
@@ -116,6 +125,7 @@ interface ExportOptions {
   filename?: string
   scale?: number
   separateBase?: boolean
+  format?: 'stl' | 'glb'
 }
 
 interface CollectedMeshes {
@@ -265,7 +275,8 @@ class SimpleZip {
 
   private _crc32(data: Uint8Array): number {
     let crc = 0xffffffff
-    const table = SimpleZip._crc32Table || (SimpleZip._crc32Table = this._makeCRCTable())
+    if (!SimpleZip._crc32Table) SimpleZip._crc32Table = this._makeCRCTable()
+    const table = SimpleZip._crc32Table
 
     for (let i = 0; i < data.length; i++) {
       crc = (crc >>> 8) ^ table[(crc ^ data[i]) & 0xff]
@@ -390,6 +401,9 @@ function skinVertexWithPosition(mesh: Mesh, vertexIndex: number, x: number, y: n
     skinned.applyMatrix4(mesh.bindMatrixInverse)
   }
 
+  // Skinning returns a vertex in mesh-local coordinates. Match the regular
+  // mesh path by applying the world transform before exporting it.
+  skinned.applyMatrix4(mesh.matrixWorld)
   return skinned
 }
 
@@ -763,7 +777,349 @@ function downloadFile(buffer: ArrayBuffer, filename: string): void {
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
-  URL.revokeObjectURL(link.href)
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000)
+}
+
+interface GLTFMeshData {
+  mesh: Mesh
+  positions: number[]
+  indices: number[]
+  uvs?: number[]
+  colors?: number[]
+  normals: number[]
+}
+
+function align4(value: number): number {
+  return (value + 3) & ~3
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined
+}
+
+function getTextureCandidate(material: MaterialLike): unknown {
+  const keys = ['map', 'baseColorMap', 'albedoMap', 'diffuseMap', 'colorMap', 'texture']
+  for (const key of keys) {
+    const candidate = material[key]
+    const record = asRecord(candidate)
+    if (record && (record.image || record.source || record.data)) return candidate
+  }
+
+  const uniforms = asRecord(material.uniforms)
+  if (uniforms) {
+    for (const uniform of Object.values(uniforms)) {
+      const value = asRecord(uniform)?.value
+      const record = asRecord(value)
+      if (record && (record.image || record.source || record.data)) return value
+    }
+  }
+  return undefined
+}
+
+function textureImage(texture: unknown): unknown {
+  const record = asRecord(texture)
+  if (!record) return undefined
+  const source = asRecord(record.source)
+  return record.image ?? source?.data ?? record.data
+}
+
+async function imageToBytes(source: unknown): Promise<{ bytes: Uint8Array; mimeType: string } | undefined> {
+  if (source instanceof Blob) {
+    return { bytes: new Uint8Array(await source.arrayBuffer()), mimeType: source.type || 'image/png' }
+  }
+
+  if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) {
+    const canvas = document.createElement('canvas')
+    canvas.width = source.width
+    canvas.height = source.height
+    canvas.getContext('2d')?.drawImage(source, 0, 0)
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+    return blob ? { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: 'image/png' } : undefined
+  }
+
+  if (source instanceof HTMLImageElement) {
+    if (!source.complete || source.naturalWidth === 0) return undefined
+  } else if (source instanceof HTMLCanvasElement) {
+    if (source.width === 0 || source.height === 0) return undefined
+  } else {
+    return undefined
+  }
+
+  const canvas = document.createElement('canvas')
+  const width = source instanceof HTMLImageElement ? source.naturalWidth : source.width
+  const height = source instanceof HTMLImageElement ? source.naturalHeight : source.height
+  canvas.width = width
+  canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return undefined
+  context.drawImage(source, 0, 0, width, height)
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  return blob ? { bytes: new Uint8Array(await blob.arrayBuffer()), mimeType: 'image/png' } : undefined
+}
+
+function materialColor(material: MaterialLike): [number, number, number, number] {
+  const opacity = typeof material.opacity === 'number' ? material.opacity : 1
+  const color = material.color
+  const colorRecord = asRecord(color)
+  if (colorRecord && typeof colorRecord.r === 'number') {
+    return [colorRecord.r, Number(colorRecord.g ?? colorRecord.r), Number(colorRecord.b ?? colorRecord.r), opacity]
+  }
+  if (Array.isArray(color) && color.length >= 3) {
+    return [Number(color[0]), Number(color[1]), Number(color[2]), Number(color[3] ?? opacity)]
+  }
+  if (typeof color === 'number' && Number.isFinite(color)) {
+    return [((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255, opacity]
+  }
+  return [0.72, 0.72, 0.72, opacity]
+}
+
+function computeVertexNormals(positions: number[], indices: number[]): number[] {
+  const normals = new Array<number>(positions.length).fill(0)
+  for (let i = 0; i + 2 < indices.length; i += 3) {
+    const ia = indices[i] * 3
+    const ib = indices[i + 1] * 3
+    const ic = indices[i + 2] * 3
+    const ax = positions[ib] - positions[ia]
+    const ay = positions[ib + 1] - positions[ia + 1]
+    const az = positions[ib + 2] - positions[ia + 2]
+    const bx = positions[ic] - positions[ia]
+    const by = positions[ic + 1] - positions[ia + 1]
+    const bz = positions[ic + 2] - positions[ia + 2]
+    const nx = ay * bz - az * by
+    const ny = az * bx - ax * bz
+    const nz = ax * by - ay * bx
+    for (const vertex of [ia, ib, ic]) {
+      normals[vertex] += nx
+      normals[vertex + 1] += ny
+      normals[vertex + 2] += nz
+    }
+  }
+  for (let i = 0; i < normals.length; i += 3) {
+    const length = Math.hypot(normals[i], normals[i + 1], normals[i + 2]) || 1
+    normals[i] /= length
+    normals[i + 1] /= length
+    normals[i + 2] /= length
+  }
+  return normals
+}
+
+async function meshesToGLB(meshes: Mesh[], scale: number): Promise<ArrayBuffer> {
+  const extracted = meshes.map((mesh): GLTFMeshData => {
+    const geometry = mesh.geometry
+    const { positions: sourcePositions, indices } = extractMeshGeometry(mesh)
+    const positions: number[] = []
+    for (let i = 0; i < sourcePositions.length; i += 3) {
+      positions.push(sourcePositions[i], sourcePositions[i + 1], sourcePositions[i + 2])
+    }
+    const vertexCount = positions.length / 3
+    const indexList = indices ? Array.from(indices, Number) : Array.from({ length: vertexCount }, (_, i) => i)
+    const uvAttribute = geometry.attributes.uv
+    const uvs = uvAttribute
+      ? Array.from({ length: vertexCount }, (_, i) => [uvAttribute.getX(i), uvAttribute.getY(i)]).flat()
+      : undefined
+    const colorAttribute = geometry.attributes.color
+    const colors = colorAttribute
+      ? Array.from({ length: vertexCount }, (_, i) => [
+          colorAttribute.getX(i),
+          colorAttribute.getY(i),
+          colorAttribute.getZ(i),
+        ]).flat()
+      : undefined
+    return { mesh, positions, indices: indexList, uvs, colors, normals: [] }
+  })
+
+  let minZ = Number.POSITIVE_INFINITY
+  for (const item of extracted) {
+    for (let i = 0; i < item.positions.length; i += 3) {
+      const oldY = item.positions[i + 1]
+      const oldZ = item.positions[i + 2]
+      item.positions[i] *= scale
+      item.positions[i + 1] = -oldZ * scale
+      item.positions[i + 2] = oldY * scale
+      minZ = Math.min(minZ, item.positions[i + 2])
+    }
+  }
+  const zOffset = Number.isFinite(minZ) ? -minZ + 2.5 : 0
+  for (const item of extracted) {
+    for (let i = 2; i < item.positions.length; i += 3) item.positions[i] += zOffset
+    item.normals = computeVertexNormals(item.positions, item.indices)
+  }
+
+  const binParts: Uint8Array[] = []
+  const views: Array<Record<string, number>> = []
+  const accessors: Array<Record<string, unknown>> = []
+  const materials: Array<Record<string, unknown>> = []
+  const images: Array<Record<string, unknown>> = []
+  const textures: Array<Record<string, unknown>> = []
+  const samplers: Array<Record<string, unknown>> = []
+  const gltfMeshes: Array<Record<string, unknown>> = []
+  const nodes: Array<Record<string, unknown>> = []
+  const textureCache = new Map<unknown, number>()
+  let inaccessibleTextureCount = 0
+  let binaryLength = 0
+  const bufferLength = () => binaryLength
+
+  const addBytes = (bytes: Uint8Array, target?: number): number => {
+    const currentLength = bufferLength()
+    const offset = align4(currentLength)
+    if (offset > currentLength) {
+      binParts.push(new Uint8Array(offset - currentLength))
+      binaryLength = offset
+    }
+    views.push({ buffer: 0, byteOffset: offset, byteLength: bytes.byteLength, ...(target ? { target } : {}) })
+    binParts.push(bytes)
+    binaryLength += bytes.byteLength
+    return views.length - 1
+  }
+
+  const addFloatAccessor = (values: number[], type: string, count: number, includeBounds = false): number => {
+    const bytes = new Uint8Array(values.length * 4)
+    const view = new DataView(bytes.buffer)
+    values.forEach((value, index) => view.setFloat32(index * 4, value, true))
+    const bufferView = addBytes(bytes, 34962)
+    const accessor: Record<string, unknown> = { bufferView, componentType: 5126, count, type }
+    if (includeBounds && count > 0) {
+      const components = 3
+      const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY]
+      const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY]
+      for (let i = 0; i < count; i++) {
+        for (let axis = 0; axis < components; axis++) {
+          const value = values[i * components + axis]
+          min[axis] = Math.min(min[axis], value)
+          max[axis] = Math.max(max[axis], value)
+        }
+      }
+      accessor.min = min
+      accessor.max = max
+    }
+    accessors.push(accessor)
+    return accessors.length - 1
+  }
+
+  const addIndexAccessor = (values: number[]): number => {
+    let max = 0
+    for (const value of values) max = Math.max(max, value)
+    const componentType = max <= 65535 ? 5123 : 5125
+    const bytes = new Uint8Array(values.length * (componentType === 5123 ? 2 : 4))
+    const view = new DataView(bytes.buffer)
+    values.forEach((value, index) => {
+      if (componentType === 5123) view.setUint16(index * 2, value, true)
+      else view.setUint32(index * 4, value, true)
+    })
+    const bufferView = addBytes(bytes, 34963)
+    accessors.push({ bufferView, componentType, count: values.length, type: 'SCALAR' })
+    return accessors.length - 1
+  }
+
+  const getMaterialIndex = async (sourceMaterial: MaterialLike | undefined): Promise<number> => {
+    const material = sourceMaterial ?? {}
+    const pbr: Record<string, unknown> = {
+      baseColorFactor: materialColor(material),
+      metallicFactor: typeof material.metalness === 'number' ? material.metalness : 0,
+      roughnessFactor: typeof material.roughness === 'number' ? material.roughness : 0.8,
+    }
+    const texture = getTextureCandidate(material)
+    if (texture && !textureCache.has(texture)) {
+      try {
+        const image = await imageToBytes(textureImage(texture))
+        if (image) {
+          const imageView = addBytes(image.bytes)
+          images.push({ bufferView: imageView, mimeType: image.mimeType, name: 'HeroForge texture' })
+          textures.push({ sampler: 0, source: images.length - 1 })
+          if (samplers.length === 0) samplers.push({ magFilter: 9729, minFilter: 9987, wrapS: 10497, wrapT: 10497 })
+          textureCache.set(texture, textures.length - 1)
+        } else {
+          inaccessibleTextureCount++
+        }
+      } catch (error) {
+        inaccessibleTextureCount++
+        console.warn('Could not read a HeroForge texture; exporting its material color instead.', error)
+      }
+    }
+    const textureIndex = texture ? textureCache.get(texture) : undefined
+    if (textureIndex !== undefined) pbr.baseColorTexture = { index: textureIndex }
+    const record = asRecord(material)
+    const mat: Record<string, unknown> = {
+      name: typeof record?.name === 'string' ? record.name : `Material ${materials.length + 1}`,
+      pbrMetallicRoughness: pbr,
+      alphaMode: record?.transparent === true ? 'BLEND' : 'OPAQUE',
+      doubleSided: true,
+    }
+    materials.push(mat)
+    return materials.length - 1
+  }
+
+  for (const item of extracted) {
+    const sourceMaterials = Array.isArray(item.mesh.material) ? item.mesh.material : [item.mesh.material]
+    const groups = item.mesh.geometry.groups?.length
+      ? item.mesh.geometry.groups
+      : [{ start: 0, count: item.indices.length, materialIndex: 0 }]
+    const primitives: Array<Record<string, unknown>> = []
+    const positionAccessor = addFloatAccessor(item.positions, 'VEC3', item.positions.length / 3, true)
+    const normalAccessor = addFloatAccessor(item.normals, 'VEC3', item.normals.length / 3)
+    const uvAccessor = item.uvs ? addFloatAccessor(item.uvs, 'VEC2', item.uvs.length / 2) : undefined
+    const colorAccessor = item.colors ? addFloatAccessor(item.colors, 'VEC3', item.colors.length / 3) : undefined
+    for (const group of groups) {
+      const groupIndices = item.indices.slice(group.start, group.start + group.count)
+      const sourceMaterial = sourceMaterials[group.materialIndex ?? 0]
+      const materialIndex = await getMaterialIndex(sourceMaterial)
+      const attributes: Record<string, number> = { POSITION: positionAccessor, NORMAL: normalAccessor }
+      if (uvAccessor !== undefined) attributes.TEXCOORD_0 = uvAccessor
+      if (colorAccessor !== undefined) attributes.COLOR_0 = colorAccessor
+      primitives.push({ attributes, indices: addIndexAccessor(groupIndices), material: materialIndex, mode: 4 })
+    }
+    gltfMeshes.push({ name: item.mesh.name || `Mesh ${gltfMeshes.length + 1}`, primitives })
+    nodes.push({ name: item.mesh.name || `Mesh ${nodes.length + 1}`, mesh: gltfMeshes.length - 1 })
+  }
+
+  const binaryByteLength = bufferLength()
+  const binary = new Uint8Array(align4(binaryByteLength))
+  let cursor = 0
+  for (const part of binParts) {
+    binary.set(part, cursor)
+    cursor += part.length
+  }
+  const document: Record<string, unknown> = {
+    asset: { version: '2.0', generator: 'HeroForge Exporter' },
+    scene: 0,
+    scenes: [{ nodes: nodes.map((_, index) => index) }],
+    nodes,
+    meshes: gltfMeshes,
+    materials,
+    accessors,
+    bufferViews: views,
+    buffers: [{ byteLength: binary.length }],
+  }
+  if (images.length) {
+    document.images = images
+    document.textures = textures
+    document.samplers = samplers
+  }
+
+  const json = new TextEncoder().encode(JSON.stringify(document))
+  const jsonLength = align4(json.length)
+  const totalLength = 12 + 8 + jsonLength + 8 + binary.length
+  if (totalLength > 0xffffffff) throw new Error('The generated GLB exceeds the 4 GB format limit.')
+  const glb = new ArrayBuffer(totalLength)
+  const data = new DataView(glb)
+  data.setUint32(0, 0x46546c67, true)
+  data.setUint32(4, 2, true)
+  data.setUint32(8, totalLength, true)
+  data.setUint32(12, jsonLength, true)
+  data.setUint32(16, 0x4e4f534a, true)
+  new Uint8Array(glb, 20, json.length).set(json)
+  new Uint8Array(glb, 20 + json.length, jsonLength - json.length).fill(0x20)
+  const binaryHeader = 20 + jsonLength
+  data.setUint32(binaryHeader, binary.length, true)
+  data.setUint32(binaryHeader + 4, 0x004e4942, true)
+  new Uint8Array(glb, binaryHeader + 8).set(binary)
+  console.info(`GLB export: ${gltfMeshes.length} meshes, ${textures.length} textures.`)
+  if (inaccessibleTextureCount > 0) {
+    console.warn(
+      `${inaccessibleTextureCount} texture(s) could not be read from HeroForge. Their material colors were exported instead.`,
+    )
+  }
+  return glb
 }
 
 /**
@@ -773,7 +1129,7 @@ function downloadFile(buffer: ArrayBuffer, filename: string): void {
  * @param options.separateBase - Export base and character separately in a ZIP (default: true)
  */
 export function exportCharacter(options: ExportOptions = {}): void {
-  const { filename = 'heroforge-character', scale = 10, separateBase = true } = options
+  const { filename = 'heroforge-character', scale = 10, separateBase = true, format = 'stl' } = options
 
   console.log('Starting HeroForge character export...')
   console.log(`  Scale: ${scale}x`)
@@ -792,6 +1148,18 @@ export function exportCharacter(options: ExportOptions = {}): void {
 
   if (characterMeshes.length === 0 && baseMeshes.length === 0) {
     console.error('No meshes found.')
+    return
+  }
+
+  if (format === 'glb') {
+    void meshesToGLB([...characterMeshes, ...baseMeshes], scale)
+      .then((buffer) => {
+        downloadFile(buffer, `${filename}.glb`)
+        console.log(`GLB export complete: ${filename}.glb`)
+      })
+      .catch((error: unknown) => {
+        console.error('GLB export failed.', error)
+      })
     return
   }
 
