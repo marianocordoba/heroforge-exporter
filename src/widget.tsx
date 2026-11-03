@@ -9,12 +9,13 @@ export const Widget = () => {
   const [scale, setScale] = createSignal(1)
   const [separateBase, setSeparateBase] = createSignal(false)
   const [filename, setFilename] = createSignal('hero')
+  const [format, setFormat] = createSignal<'stl' | 'glb'>('stl')
 
   const handleToggle = () => {
     setOpen(!open())
 
     if (open()) {
-      ref.style.top = `${Math.max(document.documentElement.clientHeight - 258 - 25, 25)}px`
+      ref.style.top = `${Math.max(document.documentElement.clientHeight - 352 - 25, 25)}px`
     } else {
       ref.style.top = `${Math.max(document.documentElement.clientHeight - 48 - 25, 25)}px`
     }
@@ -41,6 +42,7 @@ export const Widget = () => {
       scale: 10 * scale(),
       filename: filename(),
       separateBase: separateBase(),
+      format: format(),
     })
   }
 
@@ -80,6 +82,19 @@ export const Widget = () => {
           />
         </div>
         <div class={s.field}>
+          <label for="format">Format</label>
+          <select
+            class={s.input}
+            id="format"
+            value={format()}
+            onInput={(e) => setFormat((e.target as HTMLSelectElement).value as 'stl' | 'glb')}
+          >
+            <option value="stl">STL (3D printing)</option>
+            <option value="glb">GLB (Blender / Unity)</option>
+          </select>
+        </div>
+        <div class={s.note}>GLB includes UVs and textures that the current HeroForge scene makes available.</div>
+        <div class={s.field}>
           <label for="filename">Filename</label>
           <input
             class={s.input}
@@ -89,7 +104,10 @@ export const Widget = () => {
             onInput={(e) => setFilename((e.target as HTMLInputElement).value)}
           />
         </div>
-        <div classList={{ [s.field]: true, [s.row]: true }}>
+        <div
+          classList={{ [s.field]: true, [s.row]: true }}
+          style={{ display: format() === 'stl' ? undefined : 'none' }}
+        >
           <label for="separateBase">Separate base</label>
           <div class={s.checkbox}>
             <input
